@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>이미지 메타 확인기</title>
+<style>
+  :root{
+    --bg:#111;
+    --panel:#181818;
+    --line:#2a2a2a;
+    --text:#f2f2f2;
+    --sub:#9a9a9a;
+    --accent:#7fb3ff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font:13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap{
+    max-width:980px;
+    margin:0 auto;
+    padding:10px;
+  }
+  .top{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  button,.file-btn{
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--text);
+    padding:6px 10px;
+    font:inherit;
+    cursor:pointer;
+  }
+  button:hover,.file-btn:hover{border-color:#444}
+  input[type="file"]{display:none}
+  #drop{
+    border:1px dashed #444;
+    padding:8px 10px;
+    color:var(--sub);
+    margin-bottom:8px;
+    user-select:none;
+  }
+  #drop.drag{border-color:var(--accent); color:#dbe9ff}
+  .meta{
+    display:grid;
+    grid-template-columns:120px 1fr;
+    gap:4px 8px;
+    align-items:start;
+    border-top:1px solid var(--line);
+    padding-top:8px;
+  }
+  .label{
+    color:var(--sub);
+    white-space:nowrap;
+    padding-top:6px;
+  }
+  .value{
+    min-width:0;
+  }
+  textarea, .singleline{
+    width:100%;
+    border:1px solid var(--line);
+    background:#0d0d0d;
+    color:var(--text);
+    padding:6px 8px;
+    font:12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize:none;
+    outline:none;
+  }
+  .singleline{
+    overflow:auto hidden;
+    white-space:pre;
+    height:36px;
+  }
+  textarea{
+    overflow:hidden;
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+  .head{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    margin-bottom:8px;
+    min-height:42px;
+  }
+  .thumb{
+    width:52px;
+    height:52px;
+    object-fit:cover;
+    border:1px solid var(--line);
+    background:#0d0d0d;
+  }
+  .info{
+    min-width:0;
+    flex:1;
+  }
+  .name{
+    font-size:12px;
+    color:var(--sub);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .kind{
+    font-weight:700;
+  }
+  .empty{
+    color:var(--sub);
+    border-top:1px solid var(--line);
+    padding-top:10px;
+  }
+  .inline{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .mini{
+    color:var(--sub);
+    font-size:12px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <button id="clipBtn" type="button">클립보드</button>
+    <label class="file-btn">
+      파일 선택
+      <input id="fileInput" type="file" accept="image/png,image/*" />
+    </label>
+    <span class="mini">붙여넣기 / 드래그 가능</span>
+  </div>
+
+  <div id="drop">여기에 이미지를 드래그하거나, Ctrl+V로 붙여넣거나, 위 버튼을 사용.</div>
+
+  <div class="head">
+    <img id="preview" class="thumb" alt="" />
+    <div class="info">
+      <div class="inline">
+        <span id="kind" class="kind">대기 중</span>
+        <span id="size" class="mini"></span>
+      </div>
+      <div id="filename" class="name"></div>
+    </div>
+  </div>
+
+  <div id="result" class="empty">이미지를 넣으면 메타데이터를 간단하게 보여줍니다.</div>
+</div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const clipBtn = document.getElementById('clipBtn');
+const drop = document.getElementById('drop');
+const preview = document.getElementById('preview');
+const kindEl = document.getElementById('kind');
+const sizeEl = document.getElementById('size');
+const filenameEl = document.getElementById('filename');
+const result = document.getElementById('result');
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files?.[0];
+  if (file) handleFile(file);
+});
+
+document.addEventListener('paste', e => {
+  const items = [...(e.clipboardData?.items || [])];
+  const item = items.find(i => i.type.startsWith('image/'));
+  if (!item) return;
+  const file = item.getAsFile();
+  if (file) handleFile(file);
+});
+
+['dragenter','dragover'].forEach(evt => {
+  drop.addEventListener(evt, e => {
+    e.preventDefault();
+    drop.classList.add('drag');
+  });
+});
+
+['dragleave','drop'].forEach(evt => {
+  drop.addEventListener(evt, e => {
+    e.preventDefault();
+    drop.classList.remove('drag');
+  });
+});
+
+drop.addEventListener('drop', e => {
+  const file = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith('image/'));
+  if (file) handleFile(file);
+});
+
+clipBtn.addEventListener('click', async () => {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type = item.types.find(t => t.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const file = new File([blob], 'clipboard-image.png', { type: blob.type });
+      handleFile(file);
+      return;
+    }
+    alert('클립보드에 이미지가 없습니다.');
+  } catch (err) {
+    alert('클립보드 읽기 실패: 브라우저 권한/보안 컨텍스트를 확인하세요.');
+  }
+});
+
+async function handleFile(file){
+  resetView();
+  filenameEl.textContent = file.name || '(이름 없음)';
+  sizeEl.textContent = file.type ? `${file.type}` : '';
+  preview.src = URL.createObjectURL(file);
+
+  const img = new Image();
+  img.onload = () => { sizeEl.textContent = `${img.width}×${img.height} · ${file.type || 'unknown'}`; };
+  img.src = preview.src;
+
+  try{
+    if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
+      renderUnknown('PNG 메타데이터만 읽습니다.');
+      return;
+    }
+
+    const meta = await readPngTextChunks(await file.arrayBuffer());
+    const kind = detectKind(meta);
+    kindEl.textContent = kind === 'niji' ? '니지' : kind === 'nai' ? '나이' : '알 수 없음';
+
+    if (kind === 'niji') {
+      renderNiji(meta);
+    } else if (kind === 'nai') {
+      renderNAI(meta);
+    } else {
+      renderUnknown('인식 가능한 니지/나이 메타데이터를 찾지 못했습니다.', meta);
+    }
+  } catch(err){
+    console.error(err);
+    renderUnknown('메타데이터 해석 실패');
+  }
+}
+
+function resetView(){
+  result.className = '';
+  result.innerHTML = '';
+  kindEl.textContent = '분석 중...';
+}
+
+function detectKind(meta){
+  const comment = meta.Comment || '';
+  const desc = meta.Description || '';
+
+  try{
+    const obj = JSON.parse(comment);
+    if (obj && (
+      obj.sampler !== undefined ||
+      obj.seed !== undefined ||
+      obj.steps !== undefined ||
+      obj.uc !== undefined ||
+      obj.scale !== undefined
+    )) return 'nai';
+  }catch(e){}
+
+  if (desc && /--niji\b|--profile\b|--stylize\b|--chaos\b|Job ID:/i.test(desc)) {
+    return 'niji';
+  }
+
+  return 'unknown';
+}
+
+function renderNiji(meta){
+  const desc = cleanNiji(meta.Description || '');
+  result.innerHTML = `
+    <div class="meta">
+      <div class="label">프롬프트</div>
+      <div class="value"><div class="singleline" contenteditable="true" spellcheck="false">${escapeHtml(desc)}</div></div>
+    </div>
+  `;
+}
+
+function renderNAI(meta){
+  let obj = {};
+  try { obj = JSON.parse(meta.Comment || '{}'); } catch(e) {}
+
+  const data = extractNAI(meta, obj);
+
+  result.innerHTML = `
+    <div class="meta">
+      <div class="label">프롬프트</div>
+      <div class="value"><textarea id="f_prompt" spellcheck="false">${escapeTextarea(data.prompt)}</textarea></div>
+
+      <div class="label">네거티브</div>
+      <div class="value"><textarea id="f_negative" spellcheck="false">${escapeTextarea(data.negative)}</textarea></div>
+
+      <div class="label">캐릭터 프롬프트</div>
+      <div class="value"><textarea id="f_charPrompt" spellcheck="false">${escapeTextarea(data.charPrompt)}</textarea></div>
+
+      <div class="label">캐릭터 네거티브</div>
+      <div class="value"><textarea id="f_charNegative" spellcheck="false">${escapeTextarea(data.charNegative)}</textarea></div>
+
+      <div class="label">설정</div>
+      <div class="value"><div class="singleline" contenteditable="true" spellcheck="false">${escapeHtml(
+        `seed: ${data.seed || ''} | steps: ${data.steps || ''} | sampler: ${data.sampler || ''} | scale: ${data.scale || ''} | rescale: ${data.rescale || ''}`
+      )}</div></div>
+    </div>
+  `;
+
+  ['f_prompt','f_negative','f_charPrompt','f_charNegative'].forEach(id => autoResize(document.getElementById(id)));
+}
+
+function renderUnknown(message, meta = null){
+  kindEl.textContent = '알 수 없음';
+  if (!meta) {
+    result.className = 'empty';
+    result.textContent = message;
+    return;
+  }
+
+  const lines = [];
+  for (const [k,v] of Object.entries(meta)) {
+    lines.push(`${k}: ${String(v)}`);
+  }
+
+  result.innerHTML = `
+    <div class="meta">
+      <div class="label">상태</div>
+      <div class="value"><div class="singleline" contenteditable="true" spellcheck="false">${escapeHtml(message)}</div></div>
+      <div class="label">raw</div>
+      <div class="value"><textarea id="rawmeta" spellcheck="false">${escapeTextarea(lines.join('\n'))}</textarea></div>
+    </div>
+  `;
+  autoResize(document.getElementById('rawmeta'));
+}
+
+function cleanNiji(text){
+  return String(text)
+    .replace(/\s*Job ID:\s*[0-9a-f-]+\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractNAI(meta, obj){
+  const prompt =
+    meta.Description ||
+    obj.prompt ||
+    obj?.v4_prompt?.caption?.base_caption ||
+    '';
+
+  const negative =
+    obj.uc ||
+    obj.negative_prompt ||
+    obj?.v4_negative_prompt?.caption?.base_caption ||
+    '';
+
+  const charPrompt = extractCharText(obj?.v4_prompt) || obj.character_prompt || '';
+  const charNegative = extractCharText(obj?.v4_negative_prompt) || obj.character_negative || '';
+
+  return {
+    prompt,
+    negative,
+    charPrompt,
+    charNegative,
+    seed: safeVal(obj.seed),
+    steps: safeVal(obj.steps),
+    sampler: safeVal(obj.sampler),
+    scale: safeVal(obj.scale),
+    rescale: safeVal(obj.cfg_rescale)
+  };
+}
+
+function extractCharText(node){
+  const arr =
+    node?.caption?.char_captions ||
+    node?.char_captions ||
+    [];
+  if (!Array.isArray(arr)) return '';
+  return arr
+    .map(x => x?.char_caption ?? x?.caption ?? x?.prompt ?? '')
+    .filter(Boolean)
+    .join('\n');
+}
+
+function safeVal(v){
+  return v === undefined || v === null ? '' : String(v);
+}
+
+function autoResize(el){
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+  el.addEventListener('input', () => {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  });
+}
+
+async function readPngTextChunks(buffer){
+  const bytes = new Uint8Array(buffer);
+  const sig = [137,80,78,71,13,10,26,10];
+  for (let i=0;i<8;i++){
+    if (bytes[i] !== sig[i]) throw new Error('PNG 아님');
+  }
+
+  const out = {};
+  let pos = 8;
+
+  while (pos + 8 <= bytes.length){
+    const length = readUint32(bytes, pos);
+    const type = readString(bytes, pos + 4, 4);
+    const start = pos + 8;
+    const end = start + length;
+    if (end > bytes.length) break;
+
+    const data = bytes.slice(start, end);
+
+    if (type === 'tEXt') {
+      const {keyword, text} = parseTEXT(data);
+      if (keyword) out[keyword] = text;
+    } else if (type === 'iTXt') {
+      const parsed = await parseITXT(data);
+      if (parsed.keyword) out[parsed.keyword] = parsed.text;
+    } else if (type === 'zTXt') {
+      const parsed = await parseZTXT(data);
+      if (parsed.keyword) out[parsed.keyword] = parsed.text;
+    }
+
+    pos = end + 4; // CRC 포함
+    if (type === 'IEND') break;
+  }
+
+  return out;
+}
+
+function readUint32(bytes, offset){
+  return (
+    (bytes[offset] << 24) |
+    (bytes[offset + 1] << 16) |
+    (bytes[offset + 2] << 8) |
+    (bytes[offset + 3])
+  ) >>> 0;
+}
+
+function readString(bytes, offset, length){
+  return new TextDecoder('latin1').decode(bytes.slice(offset, offset + length));
+}
+
+function parseTEXT(data){
+  const idx = data.indexOf(0);
+  if (idx < 0) return {keyword:'', text:''};
+  const keyword = new TextDecoder('latin1').decode(data.slice(0, idx));
+  const text = new TextDecoder('utf-8').decode(data.slice(idx + 1));
+  return {keyword, text};
+}
+
+async function parseITXT(data){
+  let p = 0;
+  const readNullTerm = () => {
+    const start = p;
+    while (p < data.length && data[p] !== 0) p++;
+    const part = data.slice(start, p);
+    p++;
+    return part;
+  };
+
+  const keyword = new TextDecoder('latin1').decode(readNullTerm());
+  const compressionFlag = data[p++]; // 0/1
+  const compressionMethod = data[p++]; // usually 0
+  if (compressionMethod !== 0 && compressionFlag === 1) return {keyword, text:''};
+
+  readNullTerm(); // language tag
+  readNullTerm(); // translated keyword
+  let textBytes = data.slice(p);
+
+  if (compressionFlag === 1) {
+    textBytes = await inflateBytes(textBytes);
+  }
+
+  const text = new TextDecoder('utf-8').decode(textBytes);
+  return {keyword, text};
+}
+
+async function parseZTXT(data){
+  let p = 0;
+  while (p < data.length && data[p] !== 0) p++;
+  const keyword = new TextDecoder('latin1').decode(data.slice(0, p));
+  p++;
+  const compressionMethod = data[p++];
+  if (compressionMethod !== 0) return {keyword, text:''};
+
+  const compressed = data.slice(p);
+  const raw = await inflateBytes(compressed);
+  const text = new TextDecoder('utf-8').decode(raw);
+  return {keyword, text};
+}
+
+async function inflateBytes(uint8){
+  if (!('DecompressionStream' in window)) return uint8;
+  const ds = new DecompressionStream('deflate');
+  const stream = new Blob([uint8]).stream().pipeThrough(ds);
+  const ab = await new Response(stream).arrayBuffer();
+  return new Uint8Array(ab);
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;');
+}
+function escapeTextarea(str){
+  return String(str).replaceAll('</textarea>','&lt;/textarea&gt;');
+}
+</script>
+</body>
+</html>
