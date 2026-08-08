@@ -43,21 +43,24 @@
   button:hover,.file-btn:hover{border-color:#444}
   input[type="file"]{display:none}
   #drop{
-    border:1px dashed #444;
-    padding:8px 10px;
+    height:130px;
+    border:1px dashed #555;
+    background:#161616;
     color:var(--sub);
-    margin-bottom:8px;
+    margin-bottom:10px;
     user-select:none;
     display:flex;
-    
     align-items:center;
     justify-content:center;
-
     text-align:center;
     font-size:14px;
     cursor:pointer;
   }
-  #drop.drag{border-color:var(--accent); color:#dbe9ff}
+  #drop.drag{
+    border-color:var(--accent);
+    background:#1c1f24;
+    color:#dbe9ff;
+  }
   .meta{
     display:grid;
     grid-template-columns:120px minmax(0, 1fr);
@@ -88,6 +91,18 @@
     overflow:auto hidden;
     white-space:pre;
     height:36px;
+  }
+  .niji-prompt{
+    width:100%;
+    border:1px solid var(--line);
+    background:#0d0d0d;
+    color:var(--text);
+    padding:8px;
+    font:12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    outline:none;
   }
   textarea{
     overflow:hidden;
@@ -291,7 +306,7 @@ function renderNiji(meta){
   result.innerHTML = `
     <div class="meta">
       <div class="label">프롬프트</div>
-      <div class="value"><div class="singleline" contenteditable="true" spellcheck="false">${escapeHtml(desc)}</div></div>
+      <div class="value"><div class="niji-prompt" contenteditable="true" spellcheck="false">${escapeHtml(desc)}</div></div>
     </div>
   `;
 }
