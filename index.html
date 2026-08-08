@@ -48,11 +48,19 @@
     color:var(--sub);
     margin-bottom:8px;
     user-select:none;
+    display:flex;
+    
+    align-items:center;
+    justify-content:center;
+
+    text-align:center;
+    font-size:14px;
+    cursor:pointer;
   }
   #drop.drag{border-color:var(--accent); color:#dbe9ff}
   .meta{
     display:grid;
-    grid-template-columns:120px 1fr;
+    grid-template-columns:120px minmax(0, 1fr);
     gap:4px 8px;
     align-items:start;
     border-top:1px solid var(--line);
